@@ -37,13 +37,13 @@ func (m *AuthMiddleware) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r) // извлечение токена
 		if token == "" {         // Если токена нет
-			writeJSONError(w, "missing authorization token", http.StatusUnauthorized)
+			WriteJSONError(w, "missing authorization token", http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := m.jwtManager.ValidateToken(token) // Проверка токена (подпись, срок действия, парсится claims)
 		if err != nil {
-			writeJSONError(w, "invalid or expired token", http.StatusUnauthorized)
+			WriteJSONError(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 
@@ -116,7 +116,7 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+func WriteJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: message})

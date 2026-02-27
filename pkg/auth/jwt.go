@@ -2,6 +2,8 @@ package auth
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -28,6 +30,9 @@ type JWTManager struct {
 
 // NewJWTManager создает новый экземпляр JWT менеджера
 func NewJWTManager(secretKey string, ttlHours int) *JWTManager {
+	if secretKey == "" {
+		log.Fatal("JWT secret must be set via environment variable JWT_SECRET") // Проверка, что секрет задан
+	}
 	return &JWTManager{
 		secretKey: []byte(secretKey),                   // преобразует секрет из строки в []byte
 		ttl:       time.Duration(ttlHours) * time.Hour, // преобразует TTL из часов в time.Duration для работы с time.Now().Add
@@ -58,14 +63,17 @@ func (m *JWTManager) GenerateToken(userID int, email, username string) (string, 
 	return signedToken, expiration, nil // Возвращаем строку токена и время истечения
 }
 
-// ValidateToken проверяет и парсит JWT токен
 func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 	// Парсим токен и проверяем подпись
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		// Проверяем метод подписи
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok || token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return m.secretKey, nil
 	})
-	if err != nil { // Если токен невалидный или просрочен возвращаем нужную ошибку
 
+	if err != nil { // Если токен невалидный или просрочен возвращаем нужную ошибку
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrExpiredToken
 		}

@@ -26,8 +26,10 @@ CREATE TABLE IF NOT EXISTS comments (
     content TEXT NOT NULL,
     post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
     author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- Индексы для оптимизации запросов
 -- Быстрый поиск постов пользователя

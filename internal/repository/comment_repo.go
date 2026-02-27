@@ -80,7 +80,7 @@ func (r *CommentRepo) GetByID(ctx context.Context, id int) (*model.Comment, erro
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrCommentNotFound // Записи не существует
 		}
 		return nil, fmt.Errorf("failed to get comment: %w", err)

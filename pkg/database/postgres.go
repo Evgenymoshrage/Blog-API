@@ -39,56 +39,6 @@ func NewPostgresDB(cfg Config) (*sql.DB, error) {
 	return db, nil // Возвращаем подключение
 }
 
-// Migrate выполняет миграции базы данных (создают таблицы, индексы, схему БД)
-// Пока все таблицы не создадутся, в БД ничего записывается (существует временно, внутри транзакции)
-func Migrate(db *sql.DB) error {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS users (
-			id SERIAL PRIMARY KEY,
-			username TEXT NOT NULL,
-			email TEXT UNIQUE NOT NULL,
-			password_hash TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT now(),
-			updated_at TIMESTAMP DEFAULT now()
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS posts (
-			id SERIAL PRIMARY KEY,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL,
-			author_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			created_at TIMESTAMP DEFAULT now(),
-			updated_at TIMESTAMP DEFAULT now()
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS comments (
-			id SERIAL PRIMARY KEY,
-			content TEXT NOT NULL,
-			post_id INT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-			author_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			created_at TIMESTAMP DEFAULT now(),
-			updated_at TIMESTAMP DEFAULT now()
-		);`,
-
-		`CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);`,
-	}
-
-	tx, err := db.Begin() // Начало транзакции (Все следующие команды — временные)
-	if err != nil {
-		return err
-	}
-
-	for _, query := range queries { // Выполнение SQL внутри транзакции
-		if _, err := tx.Exec(query); err != nil {
-			_ = tx.Rollback() // Если ошибка, все отменяется и удаляется
-			return err
-		}
-	}
-
-	return tx.Commit() // Если ошибок не было, все сохраняется в БД
-}
-
 // CheckConnection проверяет соединение с базой данных
 func CheckConnection(db *sql.DB) error {
 	return db.Ping() // Запрос к базе данных: база запущена? доступ по сети? логин / пароль? база сейчас отвечает?

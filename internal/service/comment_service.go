@@ -10,8 +10,10 @@ import (
 )
 
 var ( // бизнес-ошибки
-	ErrCommentNotFound = errors.New("comment not found")
-	ErrPostNotExists   = errors.New("post does not exist")
+	ErrValidation = errors.New("validation error")
+	ErrNotFound   = errors.New("not found")
+	ErrForbidden  = errors.New("forbidden")
+	ErrConflict   = errors.New("conflict")
 )
 
 // CommentService содержит бизнес-логику работы с комментариями
@@ -53,7 +55,7 @@ func (s *CommentService) Create(
 		return nil, fmt.Errorf("failed to check post existence: %w", err)
 	}
 	if !exists {
-		return nil, ErrPostNotExists
+		return nil, fmt.Errorf("%w: post not found", ErrNotFound)
 	}
 
 	// Создаем модель комментария
@@ -76,7 +78,7 @@ func (s *CommentService) GetByID(ctx context.Context, id int) (*model.Comment, e
 	comment, err := s.commentRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, repository.ErrCommentNotFound) {
-			return nil, ErrCommentNotFound
+			return nil, fmt.Errorf("%w: comment not found", ErrNotFound)
 		}
 		return nil, err
 	}
@@ -109,7 +111,7 @@ func (s *CommentService) GetByPost(
 		return nil, 0, err
 	}
 	if !exists {
-		return nil, 0, ErrPostNotExists
+		return nil, 0, ErrNotFound
 	}
 
 	// Получаем комментарии
@@ -138,9 +140,11 @@ func (s *CommentService) Update(
 	// Получаем существующий комментарий
 	comment, err := s.commentRepo.GetByID(ctx, id)
 	if err != nil {
-		return nil, ErrCommentNotFound
+		if errors.Is(err, repository.ErrCommentNotFound) {
+			return nil, fmt.Errorf("%w: comment not found", ErrNotFound)
+		}
+		return nil, err
 	}
-
 	// Проверка прав
 	if !comment.CanBeEditedBy(userID) {
 		return nil, ErrForbidden
@@ -156,6 +160,9 @@ func (s *CommentService) Update(
 
 	// Сохраняем
 	if err := s.commentRepo.Update(ctx, comment); err != nil {
+		if errors.Is(err, repository.ErrCommentNotFound) {
+			return nil, fmt.Errorf("%w: comment not found", ErrNotFound)
+		}
 		return nil, err
 	}
 
@@ -166,7 +173,10 @@ func (s *CommentService) Update(
 func (s *CommentService) Delete(ctx context.Context, id int, userID int) error {
 	comment, err := s.commentRepo.GetByID(ctx, id)
 	if err != nil {
-		return ErrCommentNotFound
+		if errors.Is(err, repository.ErrCommentNotFound) {
+			return fmt.Errorf("%w: comment not found", ErrNotFound)
+		}
+		return err
 	}
 
 	if !comment.CanBeDeletedBy(userID) {
@@ -174,6 +184,9 @@ func (s *CommentService) Delete(ctx context.Context, id int, userID int) error {
 	}
 
 	if err := s.commentRepo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrCommentNotFound) {
+			return fmt.Errorf("%w: comment not found", ErrNotFound)
+		}
 		return err
 	}
 
@@ -183,10 +196,10 @@ func (s *CommentService) Delete(ctx context.Context, id int, userID int) error {
 // validateCommentCreateRequest проверяет данные создания комментария
 func validateCommentCreateRequest(req *model.CommentCreateRequest) error {
 	if req.Content == "" {
-		return errors.New("content cannot be empty")
+		return fmt.Errorf("%w: content cannot be empty", ErrValidation)
 	}
 	if len(req.Content) > 1000 {
-		return errors.New("content too long")
+		return fmt.Errorf("%w: content too long", ErrValidation)
 	}
 	return nil
 }
@@ -194,10 +207,10 @@ func validateCommentCreateRequest(req *model.CommentCreateRequest) error {
 // validateCommentUpdateRequest проверяет данные обновления комментария
 func validateCommentUpdateRequest(req *model.CommentUpdateRequest) error {
 	if req.Content == "" {
-		return errors.New("content cannot be empty")
+		return fmt.Errorf("%w: content cannot be empty", ErrValidation)
 	}
 	if len(req.Content) > 1000 {
-		return errors.New("content too long")
+		return fmt.Errorf("%w: content too long", ErrValidation)
 	}
 	return nil
 }

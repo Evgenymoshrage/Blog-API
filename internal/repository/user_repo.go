@@ -72,7 +72,7 @@ func (r *UserRepo) Create(ctx context.Context, user *model.User) error {
 // GetByID получает пользователя по ID
 func (r *UserRepo) GetByID(ctx context.Context, id int) (*model.User, error) {
 	query := `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password_hash, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -121,7 +121,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*model.User, e
 // GetByUsername получает пользователя по username
 func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*model.User, error) {
 	query := `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password_hash, created_at, updated_at
 		FROM users
 		WHERE username = $1
 	`
@@ -167,10 +167,10 @@ func (r *UserRepo) Update(ctx context.Context, user *model.User) error {
 	user.UpdatedAt = time.Now() // Время обновления
 	query := `
 		UPDATE users
-		SET username = $1, email = $2, password = $3, updated_at = $4
-		WHERE id = $5
+		SET username = $1, email = $2, updated_at = $3
+		WHERE id = $4
 	`
-	result, err := r.db.ExecContext(ctx, query, user.Username, user.Email, user.PasswordHash, user.UpdatedAt, user.ID)
+	result, err := r.db.ExecContext(ctx, query, user.Username, user.Email, user.UpdatedAt, user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}

@@ -10,8 +10,6 @@ import (
 
 var ( // бизнес ошибки
 	ErrPostNotFound = errors.New("post not found")
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrForbidden    = errors.New("forbidden")
 )
 
 type PostService struct {
@@ -132,6 +130,9 @@ func (s *PostService) Update(
 
 	// Сохранение
 	if err := s.postRepo.Update(ctx, post); err != nil {
+		if errors.Is(err, repository.ErrPostNotFound) {
+			return nil, ErrPostNotFound
+		}
 		return nil, fmt.Errorf("failed to update post: %w", err)
 	}
 
@@ -157,9 +158,11 @@ func (s *PostService) Delete(ctx context.Context, id int, userID int) error {
 
 	// Удаление
 	if err := s.postRepo.Delete(ctx, id); err != nil {
+		if errors.Is(err, repository.ErrPostNotFound) {
+			return ErrPostNotFound
+		}
 		return fmt.Errorf("failed to delete post: %w", err)
 	}
-
 	return nil
 }
 
@@ -199,13 +202,13 @@ func (s *PostService) GetByAuthor(
 // validatePostCreateRequest проверяет данные для создания поста
 func validatePostCreateRequest(req *model.PostCreateRequest) error {
 	if req.Title == "" {
-		return errors.New("title cannot be empty")
+		return fmt.Errorf("%w: title cannot be empty", ErrValidation)
 	}
 	if len(req.Title) > 200 {
-		return errors.New("title too long")
+		return fmt.Errorf("%w: title too long", ErrValidation)
 	}
 	if req.Content == "" {
-		return errors.New("content cannot be empty")
+		return fmt.Errorf("%w: content cannot be empty", ErrValidation)
 	}
 	return nil
 }
@@ -213,13 +216,13 @@ func validatePostCreateRequest(req *model.PostCreateRequest) error {
 // validatePostUpdateRequest проверяет данные для обновления поста
 func validatePostUpdateRequest(req *model.PostUpdateRequest) error {
 	if req.Title == "" {
-		return errors.New("title cannot be empty")
+		return fmt.Errorf("%w: title cannot be empty", ErrValidation)
 	}
 	if len(req.Title) > 200 {
-		return errors.New("title too long")
+		return fmt.Errorf("%w: title too long", ErrValidation)
 	}
 	if req.Content == "" {
-		return errors.New("content cannot be empty")
+		return fmt.Errorf("%w: content cannot be empty", ErrValidation)
 	}
 	return nil
 }

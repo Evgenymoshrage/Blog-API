@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid" // генерация уникального ID запроса
@@ -31,33 +32,29 @@ func NewLoggingMiddleware(logger *log.Logger) *LoggingMiddleware {
 }
 
 // Logger логирование HTTP-запросов
-func (m *LoggingMiddleware) Logger(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { // обёртка, которая выполнится вместо оригинального хендлера
+func (m *LoggingMiddleware) Logger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
 		rw := newResponseWriter(w)
 
-		next(rw, r)
+		next.ServeHTTP(rw, r)
 
-		duration := time.Since(start) // Считаем, сколько времени занял запрос
-
-		m.logger.Printf( // Пишем лог
+		m.logger.Printf(
 			"%s %s | IP=%s | Status=%d | Duration=%s",
 			r.Method,
 			r.URL.Path,
 			getClientIP(r),
 			rw.statusCode,
-			duration,
+			time.Since(start),
 		)
-	}
+	})
 }
 
-// Recovery восстанавливается после паник
-func (m *LoggingMiddleware) Recovery(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (m *LoggingMiddleware) Recovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() { // гарантируем выполнение после выхода из функции, даже при panic
-			if err := recover(); err != nil { // recover() ловит panic
-				m.logger.Printf( // Логируем факт panic
+			if err := recover(); err != nil {
+				m.logger.Printf(
 					"PANIC recovered: %v | %s %s | IP=%s",
 					err,
 					r.Method,
@@ -73,14 +70,14 @@ func (m *LoggingMiddleware) Recovery(next http.HandlerFunc) http.HandlerFunc {
 			}
 		}()
 
-		next(w, r) // Если panic не было, просто выполняем handler
-	}
+		next.ServeHTTP(w, r) // Если panic не было, просто выполняем handler
+	})
 }
 
 // CORS (Cross-Origin Resource Sharing) механизм безопасности браузера, который позволяет веб-странице с одного источника
 // (домена, протокола, порта) безопасно запрашивать ресурсы с другого источника.
-func (m *LoggingMiddleware) CORS(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (m *LoggingMiddleware) CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")                                       // Разрешаем запросы с любых доменов
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS") // Разрешённые HTTP методы
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")            // Какие заголовки клиент может отправлять
@@ -91,8 +88,8 @@ func (m *LoggingMiddleware) CORS(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		next(w, r) // Обычные запросы идут дальше
-	}
+		next.ServeHTTP(w, r) // Обычные запросы идут дальше
+	})
 }
 
 // уникальный тип ключа для context
@@ -101,12 +98,11 @@ type requestIDKeyType struct{}
 var requestIDKey = requestIDKeyType{}
 
 // RequestID добавляет уникальный ID к каждому запросу
-func (m *LoggingMiddleware) RequestID(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		requestID := uuid.New().String() // Генерируется уникальный UUID
+func (m *LoggingMiddleware) RequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := uuid.New().String()
 
 		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
-
 		w.Header().Set("X-Request-ID", requestID)
 
 		m.logger.Printf(
@@ -116,51 +112,16 @@ func (m *LoggingMiddleware) RequestID(next http.HandlerFunc) http.HandlerFunc {
 			r.URL.Path,
 		)
 
-		next(w, r.WithContext(ctx)) // Передаём request дальше с новым context
-	}
-}
-
-// RateLimiter ограничивает количество запросов от одного клиента
-func (m *LoggingMiddleware) RateLimiter(maxRequests int, window time.Duration) func(http.HandlerFunc) http.HandlerFunc {
-	type client struct { // Структура для хранения количества запросов и времени окончания окна
-		count     int
-		expiresAt time.Time
-	}
-
-	clients := make(map[string]*client) // Хранилище клиентов по IP
-
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			ip := getClientIP(r)
-			now := time.Now()
-
-			c, exists := clients[ip]               // Проверяем, был ли этот IP раньше
-			if !exists || now.After(c.expiresAt) { // если клиента нет или окно истекло, создаем нвое окно
-				clients[ip] = &client{
-					count:     1,
-					expiresAt: now.Add(window),
-				}
-				next(w, r)
-				return
-			}
-
-			if c.count >= maxRequests { // Если превышен лимит
-				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-				return
-			}
-
-			c.count++
-			next(w, r)
-		}
-	}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // ContentTypeJSON устанавливает Content-Type: application/json для всех ответов
-func (m *LoggingMiddleware) ContentTypeJSON(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (m *LoggingMiddleware) ContentTypeJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		next(w, r)
-	}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // getClientIP извлекает IP адрес клиента
@@ -208,4 +169,55 @@ func newResponseWriter(w http.ResponseWriter) *responseWriter {
 		statusCode:     http.StatusOK,
 		written:        false,
 	}
+}
+
+type rateClient struct { // состояние одного клиента
+	count     int
+	expiresAt time.Time
+}
+
+type RateLimiter struct { // хранит состояние всех клиентов
+	mu      sync.Mutex
+	clients map[string]*rateClient
+	max     int
+	window  time.Duration
+}
+
+func NewRateLimiter(max int, window time.Duration) *RateLimiter { // создаёт один экземпляр rate limiter
+	return &RateLimiter{
+		clients: make(map[string]*rateClient),
+		max:     max,
+		window:  window,
+	}
+}
+
+func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Определяем клиента
+		ip := getClientIP(r)
+		now := time.Now()
+
+		// Блокируем доступ к map
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
+
+		// Проверяем есть ли клиент и не истекло ли окно
+		c, ok := rl.clients[ip]
+		if !ok || now.After(c.expiresAt) {
+			rl.clients[ip] = &rateClient{ // клиента нет -> начинаем новое окно
+				count:     1,
+				expiresAt: now.Add(rl.window),
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if c.count >= rl.max {
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+
+		c.count++
+		next.ServeHTTP(w, r)
+	})
 }

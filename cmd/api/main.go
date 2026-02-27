@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"final_project/internal/handler"
 	"final_project/internal/middleware"
@@ -15,7 +16,6 @@ import (
 	"final_project/pkg/database"
 
 	"github.com/go-chi/chi/v5"
-	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 )
 
@@ -43,11 +43,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Выполняем миграции
-	if err := database.Migrate(db); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
-	}
-
 	// Создаём JWT менеджер
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiryHours)
 
@@ -70,9 +65,22 @@ func main() {
 	router := chi.NewRouter()
 
 	// Middleware
-	router.Use(chiMiddleware.Logger)
-	router.Use(chiMiddleware.Recoverer)
+	logger := log.New(
+		os.Stdout,     // куда писать
+		"[BLOG-API] ", // префикс
+		log.LstdFlags|log.Lshortfile,
+	)
+
+	lm := middleware.NewLoggingMiddleware(logger)
+	rateLimiter := middleware.NewRateLimiter(100, time.Minute)
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
+
+	router.Use(lm.Recovery)            // ловим panic
+	router.Use(lm.RequestID)           // создаём request-id
+	router.Use(lm.CORS)                // CORS + OPTIONS
+	router.Use(lm.ContentTypeJSON)     // JSON заголовок
+	router.Use(rateLimiter.Middleware) // rate limit
+	router.Use(lm.Logger)              // логируем после выполнения
 
 	// Публичные маршруты
 	router.Post("/api/register", authHandler.Register)
@@ -129,7 +137,7 @@ func loadConfig() *Config {
 		DBPassword:      getEnv("DB_PASSWORD", "blogpassword"),
 		DBName:          getEnv("DB_NAME", "blogdb"),
 		DBSSLMode:       getEnv("DB_SSLMODE", "disable"),
-		JWTSecret:       getEnv("JWT_SECRET", "secret"),
+		JWTSecret:       getEnv("JWT_SECRET", ""),
 		JWTExpiryHours:  getEnvAsInt("JWT_EXPIRY_HOURS", 24),
 		CacheTTLMinutes: getEnvAsInt("CACHE_TTL_MINUTES", 5),
 	}
