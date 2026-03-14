@@ -3,9 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"final_project/internal/logger"
 	"final_project/internal/middleware"
 	"final_project/internal/model"
 	"final_project/internal/service"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -14,11 +16,13 @@ import (
 
 type PostHandler struct {
 	postService *service.PostService
+	eventLogger *logger.EventLogger
 }
 
-func NewPostHandler(postService *service.PostService) *PostHandler {
+func NewPostHandler(postService *service.PostService, eventLogger *logger.EventLogger) *PostHandler {
 	return &PostHandler{
 		postService: postService,
+		eventLogger: eventLogger,
 	}
 }
 
@@ -46,6 +50,12 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	h.eventLogger.Events <- fmt.Sprintf(
+		"user %d created post %d",
+		userID,
+		post.ID,
+	)
 
 	writeJSON(w, post, http.StatusCreated)
 }

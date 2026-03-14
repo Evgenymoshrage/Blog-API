@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"final_project/internal/handler"
+	"final_project/internal/logger"
 	"final_project/internal/middleware"
 	"final_project/internal/repository"
 	"final_project/internal/service"
@@ -56,10 +57,17 @@ func main() {
 	postService := service.NewPostService(postRepo, userRepo)
 	commentService := service.NewCommentService(commentRepo, postRepo, userRepo)
 
+	// Инициализируем новый логер
+	eventLogger, err := logger.NewEventLogger("logs.txt")
+	if err != nil {
+		log.Fatalf("Failed to create event logger: %v", err)
+	}
+	defer eventLogger.Close()
+
 	// Инициализируем хендлеры
 	authHandler := handler.NewAuthHandler(userService)
-	postHandler := handler.NewPostHandler(postService)
-	commentHandler := handler.NewCommentHandler(commentService)
+	postHandler := handler.NewPostHandler(postService, eventLogger)
+	commentHandler := handler.NewCommentHandler(commentService, eventLogger)
 
 	// Настраиваем роутер
 	router := chi.NewRouter()
@@ -98,11 +106,7 @@ func main() {
 	})
 
 	// Health check
-	router.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","service":"blog-api"}`))
-	})
+	router.Get("/api/health", handler.Health)
 
 	// Запуск сервера
 	addr := fmt.Sprintf("%s:%d", cfg.ServerHost, cfg.ServerPort)

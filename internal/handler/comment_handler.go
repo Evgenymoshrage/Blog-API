@@ -3,9 +3,11 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"final_project/internal/logger"
 	"final_project/internal/middleware"
 	"final_project/internal/model"
 	"final_project/internal/service"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -14,11 +16,13 @@ import (
 
 type CommentHandler struct {
 	commentService *service.CommentService
+	eventLogger    *logger.EventLogger
 }
 
-func NewCommentHandler(commentService *service.CommentService) *CommentHandler {
+func NewCommentHandler(commentService *service.CommentService, eventLogger *logger.EventLogger) *CommentHandler {
 	return &CommentHandler{
 		commentService: commentService,
+		eventLogger:    eventLogger,
 	}
 }
 
@@ -60,6 +64,12 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	h.eventLogger.Events <- fmt.Sprintf(
+		"user %d created comment %d",
+		userID,
+		comment.ID,
+	)
 
 	writeJSON(w, comment, http.StatusCreated)
 }
